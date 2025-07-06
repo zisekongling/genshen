@@ -123,13 +123,21 @@ def fetch_gacha_data():
         seen_names = set()
         current_year = datetime.now().year
         
-        print(f"发现往期祈愿表格: {len(soup1.find_all('table', class_='wikitable'))} 个")
-        print(f"发现集录祈愿表格: {len(soup2.find_all('table', class_='wikitable'))} 个")
+        # 修改点：正确提取嵌套表格
+        tables = []
+        
+        # 处理往期祈愿页面：查找包含卡池的内部表格
+        for section in soup1.find_all('table', class_='wikitable'):
+            # 在每行的td中查找真正的卡池表格
+            for td in section.find_all('td'):
+                tables.extend(td.find_all('table', class_='wikitable'))
+        
+        # 处理集录祈愿页面：直接获取所有表格
+        tables.extend(soup2.find_all('table', class_='wikitable'))
+        
+        print(f"发现有效卡池表格: {len(tables)} 个")
         
         # 解析所有卡池表格
-        tables = [*soup1.find_all('table', class_='wikitable'), *soup2.find_all('table', class_='wikitable')]
-        print(f"总表格数: {len(tables)}")
-        
         for i, table in enumerate(tables, 1):
             try:
                 print(f"解析表格 {i}/{len(tables)}...")
