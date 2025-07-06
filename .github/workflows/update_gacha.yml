@@ -1,51 +1,90 @@
-name: Update Gacha Data
+name: Update Genshin Gacha Data
 
 on:
   schedule:
     - cron: '0 */2 * * *'  # 每两小时运行一次 (UTC时间)
   workflow_dispatch:  # 允许手动触发
   push:  # 当有代码推送时也运行
-    branches: [ main ]
+    paths-ignore:
+      - 'gacha_data.json'
 
 jobs:
-  update-data:
+  update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 显式授予写入权限
+    
     steps:
-    - name: Checkout code with write permissions
+    - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        # 使用具有写权限的PAT
-        token: ${{ secrets.PAT_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}  # 添加必要的token参数
         fetch-depth: 0  # 获取所有历史记录
-
+        
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-
+        
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
+        pip install --upgrade pip
         pip install -r requirements.txt
-
-    - name: Run scraper and commit changes
-      run: |
-        python python.py --save-json gacha_data.json
         
-        git config user.name "GitHub Actions"
-        git config user.email "actions@users.noreply.github.com"
-        
-        git add gacha_data.json
-        git commit -m "Auto-update gacha data $(date -u +'%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
-        
-        # 使用PAT进行身份验证的推送
-        git push https://${{ github.actor }}:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git main --force
-
-    - name: Sync to Gitee
-      uses: wearerequired/git-mirror-action@master
-      env:
-        SSH_PRIVATE_KEY: ${{ secrets.GITEE_SSH_KEY }}
+    - name: Run data scraper
+      run: python python.py --save-json gacha_data.json
+      
+    - name: Force push to GitHub
+      uses: actions/github-script@v6
       with:
-        source-repo: git@github.com:${{ github.repository }}.git
-        destination-repo: git@gitee.com:zisekongling/genshin-impact-kachi.git
-        force: true  # 强制推送
+        script: |
+          const { execSync } = require('child_process');
+          
+          // 配置 Git 用户
+          execSync('git config user.name "GitHub Actions"');
+          execSync('git config user.email "actions@users.noreply.github.com"');
+          
+          // 添加更改
+          execSync('git add gacha_data.json');
+          
+          // 检查是否有更改
+          const status = execSync('git status --porcelain').toString().trim();
+          if (!status) {
+            console.log('没有需要提交的更改');
+            return;
+          }
+          
+          // 提交更改
+          const commitMessage = `自动更新抽卡数据: ${new Date().toUTCString()}`;
+          execSync(`git commit -m "${commitMessage}"`);
+          
+          // 强制推送到 GitHub
+          try {
+            execSync('git push --force origin HEAD:${{ github.ref }}');
+            console.log('强制推送成功');
+          } catch (error) {
+            console.error('强制推送失败:', error);
+            
+            // 如果强制推送失败，先拉取最新更改再强制推送
+            console.log('尝试拉取最新更改并强制推送...');
+            execSync('git fetch origin');
+            execSync('git reset --hard origin/${{ github.ref }}');
+            execSync('git add gacha_data.json');
+            execSync(`git commit -m "强制更新: ${new Date().toUTCString()}"`);
+            execSync('git push --force origin HEAD:${{ github.ref }}');
+            console.log('重新推送成功');
+          }
+          
+    - name: Push to Gitee Mirror
+      env:
+        GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        GITEE_USERNAME: zisekongling
+        GITEE_REPO: genshin-impact-kachi
+      run: |
+        # 添加 Gitee 远程仓库
+        git remote add gitee https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/${GITEE_USERNAME}/${GITEE_REPO}.git
+        
+        # 强制推送到 Gitee 镜像仓库
+        git push --force gitee HEAD:${{ github.ref }}
+        
+        echo "已成功推送到 Gitee 镜像仓库"
