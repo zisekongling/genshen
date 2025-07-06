@@ -3,6 +3,9 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import re
+import json
+import time
+import argparse  # 新增模块
 
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
@@ -105,43 +108,55 @@ def parse_gacha_table(table):
     
     return data
 
-@app.route('/gacha', methods=['GET'])
-def get_gacha_data():
-    # 检查缓存有效性（5分钟）
-    if gacha_cache["data"] and gacha_cache["timestamp"]:
-        if (datetime.now() - gacha_cache["timestamp"]).seconds < 300:
-            return jsonify(gacha_cache["data"])
-    
+def fetch_gacha_data():
+    """获取祈愿数据（核心逻辑）"""
     try:
+        print("开始从biligame获取祈愿数据...")
+        
         # 解析往期祈愿和集录祈愿页面
-        soup1 = BeautifulSoup(requests.get("https://wiki.biligame.com/ys/往期祈愿", timeout=10).content, 'html.parser')
-        soup2 = BeautifulSoup(requests.get("https://wiki.biligame.com/ys/集录祈愿", timeout=10).content, 'html.parser')
+        print("获取往期祈愿页面...")
+        soup1 = BeautifulSoup(requests.get("https://wiki.biligame.com/ys/往期祈愿", timeout=15).content, 'html.parser')
+        print("获取集录祈愿页面...")
+        soup2 = BeautifulSoup(requests.get("https://wiki.biligame.com/ys/集录祈愿", timeout=15).content, 'html.parser')
         
         all_gacha_data = []
         seen_names = set()
         current_year = datetime.now().year
         
+        print(f"发现往期祈愿表格: {len(soup1.find_all('table', class_='wikitable'))} 个")
+        print(f"发现集录祈愿表格: {len(soup2.find_all('table', class_='wikitable'))} 个")
+        
         # 解析所有卡池表格
-        for table in [*soup1.find_all('table', class_='wikitable'), *soup2.find_all('table', class_='wikitable')]:
+        tables = [*soup1.find_all('table', class_='wikitable'), *soup2.find_all('table', class_='wikitable')]
+        print(f"总表格数: {len(tables)}")
+        
+        for i, table in enumerate(tables, 1):
             try:
+                print(f"解析表格 {i}/{len(tables)}...")
                 entry = parse_gacha_table(table)
                 if not entry or not entry.get("name"):
+                    print(f"表格 {i} 未找到有效名称，跳过")
                     continue
                     
-                if entry["name"] not in seen_names:
-                    # 添加年份到日期
-                    if entry["start_time"]:
-                        # 处理日期格式（将/替换为-）
-                        entry["start_time"] = f"{current_year}/" + entry["start_time"].replace('/', '-')
-                    if entry["end_time"]:
-                        entry["end_time"] = f"{current_year}/" + entry["end_time"].replace('/', '-')
+                if entry["name"] in seen_names:
+                    print(f"跳过重复卡池: {entry['name']}")
+                    continue
                     
-                    all_gacha_data.append(entry)
-                    seen_names.add(entry["name"])
+                # 添加年份到日期
+                if entry["start_time"]:
+                    entry["start_time"] = f"{current_year}/" + entry["start_time"].replace('/', '-')
+                if entry["end_time"]:
+                    entry["end_time"] = f"{current_year}/" + entry["end_time"].replace('/', '-')
+                
+                print(f"添加卡池: {entry['name']} ({entry['type']})")
+                all_gacha_data.append(entry)
+                seen_names.add(entry["name"])
             except Exception as e:
-                print(f"解析表格出错: {e}")
+                print(f"解析表格 {i} 出错: {e}")
                 continue
 
+        print(f"成功解析卡池数: {len(all_gacha_data)}")
+        
         # 按版本分组
         version_data = {}
         for entry in all_gacha_data:
@@ -155,21 +170,82 @@ def get_gacha_data():
             reverse=True
         )[:2]
         
+        print(f"最新两个版本: {sorted_versions}")
+        
         # 构建最终数据结构
         result = {
             "last_updated": datetime.now().isoformat(),
             "gacha_data": [entry for version in sorted_versions for entry in version_data[version]]
         }
         
-        # 更新缓存
-        gacha_cache["data"] = result
-        gacha_cache["timestamp"] = datetime.now()
-        
-        return jsonify(result)
+        print(f"获取成功! 卡池总数: {len(result['gacha_data']}")
+        return result
     
     except Exception as e:
         print(f"获取祈愿数据出错: {e}")
-        return jsonify({"error": "无法获取祈愿数据"}), 500
+        return {"error": f"无法获取祈愿数据: {str(e)}"}
+
+@app.route('/gacha', methods=['GET'])
+def get_gacha_data():
+    # 检查缓存有效性（5分钟）
+    if gacha_cache["data"] and gacha_cache["timestamp"]:
+        if (datetime.now() - gacha_cache["timestamp"]).seconds < 300:
+            return jsonify(gacha_cache["data"])
+    
+    try:
+        result = fetch_gacha_data()
+        # 更新缓存
+        gacha_cache["data"] = result
+        gacha_cache["timestamp"] = datetime.now()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    parser = argparse.ArgumentParser(description='原神祈愿数据抓取服务')
+    parser.add_argument('--save-json', type=str, help='保存数据到指定JSON文件', metavar='FILE')
+    args = parser.parse_args()
+
+    if args.save_json:
+        print(f"运行模式: 保存数据到文件 {args.save_json}")
+        start_time = time.time()
+        
+        # 尝试最多3次获取数据
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"尝试 #{attempt} 获取数据...")
+                result = fetch_gacha_data()
+                
+                if "error" in result:
+                    print(f"获取数据失败: {result['error']}")
+                    if attempt < max_retries:
+                        retry_delay = 5
+                        print(f"{retry_delay}秒后重试...")
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        print("所有尝试均失败，保存错误信息")
+                        result = {"error": "所有尝试均失败: " + result.get("error", "未知错误")}
+                
+                # 保存到文件
+                with open(args.save_json, 'w', encoding='utf-8') as f:
+                    json.dump(result, f, ensure_ascii=False, indent=2)
+                
+                elapsed = time.time() - start_time
+                print(f"数据已保存至 {args.save_json}, 耗时: {elapsed:.2f}秒")
+                break
+                
+            except Exception as e:
+                print(f"保存数据时出错: {str(e)}")
+                if attempt < max_retries:
+                    retry_delay = 5
+                    print(f"{retry_delay}秒后重试...")
+                    time.sleep(retry_delay)
+                else:
+                    print("所有尝试均失败")
+                    with open(args.save_json, 'w', encoding='utf-8') as f:
+                        json.dump({"error": f"所有尝试均失败: {str(e)}"}, f, ensure_ascii=False, indent=2)
+    else:
+        print("运行模式: 启动Flask服务")
+        app.run(host='0.0.0.0', port=5000, debug=False)
