@@ -14,7 +14,8 @@ jobs:
     - name: Checkout code with write permissions
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        # 使用具有写权限的PAT
+        token: ${{ secrets.PAT_TOKEN }}
         fetch-depth: 0  # 获取所有历史记录
 
     - name: Set up Python
@@ -29,19 +30,16 @@ jobs:
 
     - name: Run scraper and commit changes
       run: |
-        # 强制更新数据文件
         python python.py --save-json gacha_data.json
         
-        # 配置Git
         git config user.name "GitHub Actions"
         git config user.email "actions@users.noreply.github.com"
         
-        # 强制提交更改
         git add gacha_data.json
         git commit -m "Auto-update gacha data $(date -u +'%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
         
-        # 强制推送更新
-        git push origin main --force
+        # 使用PAT进行身份验证的推送
+        git push https://${{ github.actor }}:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git main --force
 
     - name: Sync to Gitee
       uses: wearerequired/git-mirror-action@master
