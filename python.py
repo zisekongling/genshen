@@ -178,8 +178,6 @@ def fetch_gacha_data():
             "gacha_data": [entry for version in sorted_versions for entry in version_data[version]]
         }
         
-        # 修复这里的语法错误 - 添加了缺少的右括号
-        print(f"获取成功! 卡池总数: {len(result['gacha_data'])}")
         return result
     
     except Exception as e:
