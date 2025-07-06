@@ -30,7 +30,7 @@ jobs:
     - name: Run scraper and commit changes
       run: |
         # 强制更新数据文件
-        python python.py --save-json
+        python python.py --save-json gacha_data.json
         
         # 配置Git
         git config user.name "GitHub Actions"
