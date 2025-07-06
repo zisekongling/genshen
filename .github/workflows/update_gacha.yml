@@ -1,0 +1,40 @@
+name: Update Gacha Data
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'  # 每两小时运行一次
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run scraper and commit changes
+      run: |
+        python python.py --update-file gacha_data.json
+        git config user.name "GitHub Actions"
+        git config user.email "actions@users.noreply.github.com"
+        git add gacha_data.json
+        git commit -am "Auto-update gacha data $(date +'%Y-%m-%d %H:%M')" || echo "No changes to commit"
+        git push origin main
+
+    - name: Sync to Gitee
+      uses: wearerequired/git-mirror-action@master
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.GITEE_SSH_KEY }}
+      with:
+        source-repo: git@github.com:${{ github.repository }}.git
+        destination-repo: git@gitee.com:zisekongling/genshin-impact-kachi.git
