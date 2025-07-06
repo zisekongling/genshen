@@ -5,7 +5,7 @@ from datetime import datetime
 import re
 import json
 import time
-import argparse  # 新增模块
+import argparse
 
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
@@ -178,7 +178,8 @@ def fetch_gacha_data():
             "gacha_data": [entry for version in sorted_versions for entry in version_data[version]]
         }
         
-        print(f"获取成功! 卡池总数: {len(result['gacha_data']}")
+        # 修复这里的语法错误 - 添加了缺少的右括号
+        print(f"获取成功! 卡池总数: {len(result['gacha_data'])}")
         return result
     
     except Exception as e:
