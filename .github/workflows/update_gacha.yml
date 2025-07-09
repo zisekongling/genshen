@@ -2,7 +2,10 @@ name: Update Genshin Gacha Data
 
 on:
   schedule:
-    - cron: '0 0 * * 6,0,1'  # 每两小时运行一次 (UTC时间)
+    # 每周五 20:00 (UTC+8)
+    - cron: '0 12 * * 5'    
+    # 每周六、周日、周一 00:00 (UTC+8)   
+    - cron: '0 16 * * 6,0,1'
   workflow_dispatch:  # 允许手动触发
   push:  # 当有代码推送时也运行
     paths-ignore:
